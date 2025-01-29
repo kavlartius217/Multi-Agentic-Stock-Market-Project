@@ -1,4 +1,3 @@
---upgrade pip
 crewai
 crewai-tools
 streamlit
@@ -8,4 +7,3 @@ python-dotenv
 pandas
 matplotlib
 seaborn
-pysqlite3-binary >= 3.35.0
