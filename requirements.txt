@@ -1,5 +1,5 @@
 crewai==0.100.0
-crewai-tools==0.2.3
+crewai-tools==0.33.0
 streamlit==1.29.0
 langchain-fmp-data==0.1.2
 langchain-openai==0.1.29
