@@ -1,6 +1,10 @@
-streamlit
 crewai
 crewai-tools
+streamlit
 langchain-fmp-data
-pydantic
-serper-dev-tool
+langchain-openai
+python-dotenv
+pandas
+matplotlib
+seaborn
+pysqlite3-binary
