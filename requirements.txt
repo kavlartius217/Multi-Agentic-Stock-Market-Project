@@ -8,3 +8,4 @@ pandas
 matplotlib
 seaborn
 pysqlite3-binary
+chromadb
