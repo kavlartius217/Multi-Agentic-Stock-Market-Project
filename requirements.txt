@@ -1,3 +1,4 @@
+pip
 crewai==0.100.0
 crewai-tools==0.33.0
 streamlit==1.29.0
