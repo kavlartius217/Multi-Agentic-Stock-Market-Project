@@ -1,9 +1,9 @@
-streamlit
-matplotlib
-seaborn
-pandas
 crewai
 crewai-tools
+streamlit
 langchain-fmp-data
-openai
+langchain-openai
 python-dotenv
+pandas
+matplotlib
+seaborn
