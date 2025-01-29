@@ -6,4 +6,3 @@ python-dotenv
 pandas
 matplotlib
 seaborn
-pysqlite3 >= 3.35.0.
