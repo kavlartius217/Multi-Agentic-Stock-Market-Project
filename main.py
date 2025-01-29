@@ -1,238 +1,241 @@
 import streamlit as st
-import os
-import matplotlib.pyplot as plt
-import seaborn as sns
-import pandas as pd
-from crewai import Crew, Agent, Task, Process
-from crewai_tools import SerperDevTool
+from crewai import Crew, Process, Agent, Task
+from crewai_tools import SerperDevTool, CodeInterpreterTool, BaseTool
 from langchain_fmp_data import FMPDataTool
-from langchain.chat_models import ChatOpenAI
+from pydantic import Field
+import os
+# import crewai_tools
+# from langchain_community.tools.embed_file import EmbedFileTool
+# from crewai.tools.embed_file import EmbedFileTool
 
-# Set up API keys
-os.environ['OPENAI_API_KEY'] = st.secrets['OPENAI_API_KEY']
-os.environ['SERPER_API_KEY'] = st.secrets['SERPER_API_KEY']
-os.environ['FMP_API_KEY'] = st.secrets['FMP_API_KEY']
-os.environ['GROQ_API_KEY'] = st.secrets['GROQ_API_KEY']
+# Set API keys (replace with your actual keys)
+# Ensure these are set in your environment or Streamlit secrets
 
-# Streamlit UI setup
-st.set_page_config(page_title="AI Stock Analysis Crew", page_icon="📈")
-st.title("📈 AI-Powered Stock Analysis Crew")
+if "OPENAI_API_KEY" not in os.environ:
+    os.environ['OPENAI_API_KEY'] = st.secrets["OPENAI_API_KEY"]
 
-# Initialize tools
+if "SERPER_API_KEY" not in os.environ:
+    os.environ['SERPER_API_KEY'] = st.secrets["SERPER_API_KEY"]
+
+if "FMP_API_KEY" not in os.environ:
+    os.environ['FMP_API_KEY'] = st.secrets["FMP_API_KEY"]
+
+# Tools
 serper_tool = SerperDevTool()
+fmp_tool = FMPDataTool()
 
-class FinancialMarketDataTool(FMPDataTool):
+class FinancialMarketDataTool(BaseTool):
+    name: str = "Financial_Market_Data"
+    description: str = (
+        "Useful for retrieving financial market data. Use this tool to gather information"
+        " about stock prices, financial metrics, company profiles, and more."
+    )
+    tool: fmp_tool = Field(default_factory=FMPDataTool)
+
     def _run(self, query: str) -> str:
+        """Execute the financial market data query and return results."""
         try:
-            data = super()._run(query)
-            return self._process_data(data)
+            return self.tool.run(query)
         except Exception as e:
-            return f"Error: {str(e)}"
+            return f"Error fetching financial market data: {str(e)}"
 
-    def _process_data(self, data):
-        """Convert data to pandas DataFrame for better handling"""
-        if isinstance(data, list) and len(data) > 0:
-            return pd.DataFrame(data)
-        return data
+# Function calling LLM (using gpt-4-turbo-preview as a placeholder, replace if needed)
+from crewai import LLM
+llm = LLM(model="gpt-4-turbo-preview")
 
-fmp_tool = FinancialMarketDataTool()
-
-# Initialize LLM
-llm = ChatOpenAI(
-    model="mixtral-8x7b-32768",
-    temperature=0.3,
-    openai_api_base="https://api.groq.com/openai/v1"
+# Agents
+stock_analyst_agent = Agent(
+    role="Stock Market Researcher",
+    goal=(
+        "All the data should be relative to the current year 2025"
+        "Analyze a given stock by retrieving its historical data for the last 30 days. "
+        "Represent this data in a well-structured tabular format. "
+        "Additionally, provide detailed and insightful observations about trends, patterns, "
+        "or anomalies within the data, such as price fluctuations, volume changes, or other "
+        "noteworthy market indicators."
+    ),
+    backstory=(
+        "You are an experienced stock market researcher with a deep understanding of financial markets, "
+        "economic factors, and data analysis. Your expertise enables you to identify critical patterns "
+        "and trends that can inform investment decisions."
+    ),
+    tools=[FinancialMarketDataTool()],
+    memory=True,
+    verbose=True,
+    allow_delegation=True,
+    function_calling_llm=llm,
 )
 
-def setup_agents_tasks(stock_name):
-    # Define Agents
-    stock_analyst = Agent(
-        role="Stock Data Analyst",
-        goal=f"Analyze {stock_name} historical data and financial metrics",
-        backstory="Expert in financial data analysis with deep market understanding",
-        tools=[fmp_tool],
-        verbose=True,
-        llm=llm,
-        memory=True
+news_analyst_agent = Agent(
+    role="Stock News Analyst",
+    goal=(
+        "Search for and retrieve the latest stock-related news about a given company. "
+        "Focus on identifying news that might have an impact on the company's stock price, such as "
+        "earnings reports, management changes, mergers and acquisitions, regulatory developments, or "
+        "industry trends. Provide a concise summary of the news in an easy-to-read format, highlighting "
+        "key points and potential implications for the stock market."
+    ),
+    backstory=(
+        "You are an expert in financial journalism and market analysis with a sharp eye for identifying "
+        "news that can influence stock prices. Your insights help investors make informed decisions "
+        "by understanding the impact of current events on financial markets."
+    ),
+    tools=[serper_tool],
+    memory=False,
+    verbose=True,
+    allow_delegation=False,
+    function_calling_llm=llm,
+)
+
+visualization_agent = Agent(
+    role="As a data visualization expert, you are tasked with generating Seaborn commands based on the tabular data in the report generated by the 'stock_analyst_agent'.",
+    goal="Your goal is to create visualizations that accurately represent the insights in the tabular data using the Seaborn library.",
+    backstory="You have extensive experience in data visualization and proficiency in using Seaborn to create meaningful and informative plots for analyzing complex datasets.",
+    memory=True,
+    verbose=True
+)
+
+financial_advisor_agent = Agent(
+    role="Analyze the data received from the 'stock_analyst_agent' and 'news_analyst_agent' to provide the user with informed stock recommendations. Assess market trends, stock performance, and news sentiment to determine whether the user should buy a stock, hold an already purchased stock, or sell it.",
+    goal="Generate a comprehensive, data-driven financial report with clear investment recommendations.",
+    backstory="You are a seasoned financial advisor specializing in stock market analysis. Your expertise lies in evaluating stock performance, market conditions, and financial news to offer precise and strategic investment advice.",
+    memory=True,
+    verbose=True
+)
+
+# Tasks
+task1 = Task(
+    description="Analyze the historical data of {stock_name} for the last 30 days and provide a well-structured report. All the data should be relative to the current year 2025",
+    expected_output="A comprehensive report including: "
+    "1. A tabular representation of the stock's historical data. "
+    "2. Observations about trends, patterns, or anomalies within the data, such as price fluctuations, volume changes, or other noteworthy market indicators. "
+    "3. Insights into potential investment opportunities or risks associated with the stock.",
+    agent=stock_analyst_agent,
+    tools=[FinancialMarketDataTool()],
+    output_file="Stock_Analysis_Report_{stock_name}.md",
+)
+
+task2 = Task(
+    description=(
+        "Search and retrieve the latest impactful news about the stock of a company, "
+        "{stock_name}. Focus on news that may influence the stock price, such as earnings reports, "
+        "management changes, mergers, acquisitions, regulatory updates, or significant industry trends."
+    ),
+    expected_output=(
+        "A detailed report in the following format:\n\n"
+        "- **Company Name**: {stock_name}\n"
+        "- **News Highlights**:\n"
+        "  1. {Key Point 1}\n"
+        "  2. {Key Point 2}\n"
+        "- **Implications**: {Summary of the potential market impact}\n"
+        "- **Sources**: {List of credible sources used}\n"
+    ),
+    agent=news_analyst_agent,
+    tools=[serper_tool],
+    async_execution=True,
+    output_file="news.md",
+)
+
+task3 = Task(
+    description="Using the report generated by the 'stock_analyst' agent, create Seaborn visualizations as specified in the report. First, construct a Pandas DataFrame from the tabular data, ensuring all arrays have equal lengths. The output should contain only the necessary Seaborn commands for visualization, without any additional scripting or code",
+    expected_output="A Python file containing only Seaborn commands to visualize the data. The DataFrame must have equal-length arrays, and the visualizations should comprehensively represent the tabular data in all possible ways",
+    agent=visualization_agent,
+    output_file="visualizations.py",
+    context=[task1],
+)
+
+task4 = Task(
+    description="Analyze stock performance, market trends, and financial news to generate a comprehensive investment report. Provide clear recommendations on whether to buy, hold, or sell the stock based on the insights from 'stock_analyst_agent' and 'news_analyst_agent'.",
+    expected_output="A well-structured financial report with data-driven investment recommendations.",
+    agent=financial_advisor_agent,
+    context=[task1, task2],
+    output_file="overall_report.md",
+)
+
+# Streamlit App
+st.set_page_config(
+    page_title="Stock Analysis AI Crew",
+    page_icon="📈",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
+def main():
+    st.title("📈 Stock Analysis AI Crew")
+
+    st.sidebar.header("Configuration")
+    stock_name = st.sidebar.text_input("Enter Stock Name (e.g., Nvidia, Apple)", "Nvidia")
+
+    if st.sidebar.button("Run Analysis"):
+        with st.spinner("Analyzing... Please wait."):
+            crew = Crew(
+                tasks=[task1, task2, task3, task4],
+                agents=[
+                    stock_analyst_agent,
+                    news_analyst_agent,
+                    visualization_agent,
+                    financial_advisor_agent,
+                ],
+            )
+            result = crew.kickoff({"stock_name": stock_name})
+
+            st.success("Analysis Complete!")
+
+            # Display results
+            col1, col2, col3 = st.columns(3)
+
+            with col1:
+                st.header("Stock Analysis Report")
+                try:
+                    with open(f"Stock_Analysis_Report_{stock_name}.md", "r") as f:
+                        stock_report = f.read()
+                    st.markdown(stock_report)
+                except FileNotFoundError:
+                    st.error(f"Stock Analysis Report for {stock_name} not found.")
+
+            with col2:
+                st.header("News Report")
+                try:
+                    with open("news.md", "r") as f:
+                        news_report = f.read()
+                    st.markdown(news_report)
+                except FileNotFoundError:
+                    st.error("News Report not found.")
+
+            with col3:
+                st.header("Overall Report")
+                try:
+                    with open("overall_report.md", "r") as f:
+                        overall_report = f.read()
+                    st.markdown(overall_report)
+                except FileNotFoundError:
+                    st.error("Overall Report not found.")
+
+            # Visualizations
+            st.header("Visualizations")
+            try:
+                with open("visualizations.py", "r") as f:
+                    viz_code = f.read()
+                
+                # Execute the visualization code
+                exec(viz_code)
+
+                # Display plots (replace with your actual plot display logic)
+                # For example, if using matplotlib:
+                # import matplotlib.pyplot as plt
+                # fig, ax = plt.subplots()
+                # ... Seaborn plotting commands ...
+                # st.pyplot(fig)
+
+            except FileNotFoundError:
+                st.error("Visualizations file not found.")
+            except Exception as e:
+                st.error(f"Error executing visualization code: {e}")
+
+    st.sidebar.markdown("---")
+    st.sidebar.info(
+        "This app uses a Crew of AI agents to analyze stock data, news, and generate investment recommendations."
     )
 
-    news_analyst = Agent(
-        role="Financial News Researcher",
-        goal=f"Find latest news and sentiment about {stock_name}",
-        backstory="Experienced financial journalist with market sentiment analysis skills",
-        tools=[serper_tool],
-        verbose=True,
-        llm=llm
-    )
-
-    viz_agent = Agent(
-        role="Data Visualizer",
-        goal="Create insightful visualizations from stock data",
-        backstory="Data visualization expert specializing in financial markets",
-        verbose=True,
-        llm=llm
-    )
-
-    research_analyst = Agent(
-        role="Senior Research Analyst",
-        goal="Generate comprehensive research reports",
-        backstory="Lead analyst with expertise in combining quantitative and qualitative data",
-        verbose=True,
-        llm=llm,
-        memory=True
-    )
-
-    financial_advisor = Agent(
-        role="Chief Financial Advisor",
-        goal="Provide final investment recommendations",
-        backstory="Seasoned Wall Street advisor with proven track record",
-        verbose=True,
-        llm=llm
-    )
-
-    # Define Tasks
-    data_task = Task(
-        description=f"""
-        Analyze {stock_name} stock for the current year (2025):
-        1. Retrieve last 30 days historical data
-        2. Calculate key metrics (RSI, Moving Averages, Volatility)
-        3. Identify significant trends and patterns
-        """,
-        expected_output="Structured report with data table and technical analysis",
-        agent=stock_analyst,
-        output_file="stock_data.md"
-    )
-
-    news_task = Task(
-        description=f"""
-        Gather latest news about {stock_name}:
-        1. Search for recent announcements, earnings reports, and market news
-        2. Analyze sentiment from news articles
-        3. Identify potential market movers
-        """,
-        expected_output="News summary with sentiment analysis and source links",
-        agent=news_analyst,
-        output_file="news_report.md",
-        async_execution=True
-    )
-
-    viz_task = Task(
-        description="""
-        Create visualizations from the stock data:
-        1. Generate line chart for price movements
-        2. Create volume analysis charts
-        3. Produce technical indicator plots
-        """,
-        expected_output="Python code for Seaborn/Matplotlib visualizations",
-        agent=viz_agent,
-        context=[data_task],
-        output_file="visualizations.py"
-    )
-
-    research_task = Task(
-        description="""
-        Combine data analysis and news insights:
-        1. Create comprehensive research report
-        2. Highlight key findings from both technical and fundamental analysis
-        3. Include visualizations from data team
-        """,
-        expected_output="Formatted research report with charts and analysis",
-        agent=research_analyst,
-        context=[data_task, news_task, viz_task],
-        output_file="full_report.md"
-    )
-
-    recommendation_task = Task(
-        description="""
-        Generate final investment recommendation:
-        1. Consider all previous analysis
-        2. Provide clear Buy/Hold/Sell recommendation
-        3. Support conclusion with data-driven arguments
-        """,
-        expected_output="Executive summary with risk assessment and price targets",
-        agent=financial_advisor,
-        context=[research_task],
-        output_file="recommendation.md"
-    )
-
-    return Crew(
-        agents=[stock_analyst, news_analyst, viz_agent, research_analyst, financial_advisor],
-        tasks=[data_task, news_task, viz_task, research_task, recommendation_task],
-        process=Process.hierarchical,
-        manager_llm=llm
-    )
-
-# Streamlit UI Components
-with st.sidebar:
-    st.header("Parameters")
-    stock_name = st.text_input("Stock Ticker", "NVDA").upper()
-    analysis_days = st.slider("Analysis Period (days)", 7, 90, 30)
-    run_analysis = st.button("Start Analysis")
-
-def display_results():
-    """Display results from output files"""
-    try:
-        with open("stock_data.md") as f:
-            st.subheader("Technical Analysis")
-            st.markdown(f.read())
-        
-        with open("news_report.md") as f:
-            st.subheader("Market News & Sentiment")
-            st.markdown(f.read())
-        
-        st.subheader("Data Visualizations")
-        viz_code = open("visualizations.py").read()
-        exec(viz_code, globals(), locals())
-        fig = plt.gcf()
-        st.pyplot(fig)
-        
-        with open("full_report.md") as f:
-            st.subheader("Full Research Report")
-            st.markdown(f.read())
-            
-        with open("recommendation.md") as f:
-            st.subheader("Investment Recommendation")
-            st.markdown(f.read())
-            
-    except Exception as e:
-        st.error(f"Error displaying results: {str(e)}")
-
-# Main execution flow
-if run_analysis:
-    with st.status("🚀 Initializing Analysis Crew...", expanded=True) as status:
-        try:
-            st.write("🔧 Setting up agents and tasks...")
-            crew = setup_agents_tasks(stock_name)
-            
-            status.update(label="🧠 Running analysis pipeline...", state="running")
-            result = crew.kickoff(inputs={'stock_name': stock_name})
-            
-            status.update(label="✅ Analysis complete!", state="complete")
-            st.balloons()
-            
-        except Exception as e:
-            status.update(label=f"❌ Error: {str(e)}", state="error")
-            st.stop()
-
-    display_results()
-
-else:
-    st.info("👈 Enter a stock ticker and configure analysis parameters to begin")
-    st.image("https://i.imgur.com/6H3Bvvm.png", caption="Analysis Workflow")
-
-# Style adjustments
-st.markdown("""
-<style>
-    [data-testid=stSidebar] {
-        background: linear-gradient(45deg, #1a237e 30%, #0d47a1 90%);
-        color: white;
-    }
-    .stButton>button {
-        background: linear-gradient(45deg, #00c853 30%, #00e676 90%);
-        color: white !important;
-    }
-    h1 {
-        color: #1a237e;
-    }
-</style>
-""", unsafe_allow_html=True)
+if __name__ == "__main__":
+    main()
