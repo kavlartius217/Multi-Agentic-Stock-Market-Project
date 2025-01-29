@@ -3,5 +3,4 @@ crewai
 crewai-tools
 langchain-fmp-data
 pydantic
-os
 serper-dev-tool
