@@ -1,0 +1,9 @@
+streamlit
+matplotlib
+seaborn
+pandas
+crewai
+crewai-tools
+langchain-fmp-data
+openai
+python-dotenv
