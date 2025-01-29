@@ -1,8 +1,8 @@
-crewai==0.19.0
-crewai-tools==0.1.5
+crewai==0.31.6
+crewai-tools==0.2.3
 streamlit==1.29.0
 langchain-fmp-data==0.1.2
-langchain-openai==0.1.14
+langchain-openai==0.1.29
 python-dotenv==1.0.1
 pandas==2.1.4
 matplotlib==3.8.2
