@@ -2,8 +2,7 @@ crewai
 crewai-tools
 streamlit
 langchain-openai
-python-dotenv
 pandas
 matplotlib
 seaborn
-sqlite3 >= 3.35.0
+sqlite3
